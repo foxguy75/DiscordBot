@@ -1,0 +1,1 @@
+configure_file( DnDDiscordBot.h.in DnDDiscordBot.h )

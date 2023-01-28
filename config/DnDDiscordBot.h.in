@@ -1,0 +1,6 @@
+// The configured options and settings for DnDDiscordBot
+// clang-format off
+#define DnDDiscordBot_VERSION_MAJOR @DnDDiscordBot_VERSION_MAJOR@
+#define DnDDiscordBot_VERSION_MINOR @DnDDiscordBot_VERSION_MINOR@
+#define DnDDiscordBot_VERSION_PATCH @DnDDiscordBot_VERSION_PATCH@
+// clang-format on
