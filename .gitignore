@@ -16,3 +16,7 @@ CTestTestfile.cmake
 _deps
 
 *.vcxproj*
+
+.vs
+
+.vscode

@@ -1,0 +1,9 @@
+{
+    "version": 4,
+    "vendor": {
+        "conan": {}
+    },
+    "include": [
+        "E:\\Repos\\DnDDiscordBot\\build\\CMakePresets.json"
+    ]
+}
