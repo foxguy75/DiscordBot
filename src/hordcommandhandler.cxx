@@ -1,4 +1,4 @@
-#include <cstdlib>
+﻿#include <cstdlib>
 #include <fstream>
 #include <stdexcept>
 #include <string>
@@ -9,6 +9,8 @@
 
 #include <constants.hxx>
 #include <hordcommandhandler.hxx>
+
+using namespace dpp;
 
 namespace
 {
@@ -133,45 +135,49 @@ std::string CommandHandler::withdraw() { return Constants::Responses::DEFAULT_ER
 
 void CommandHandler::proccessTransaction( Transaction&& theTransaction )
 {
-    m_bot.log( dpp::loglevel::ll_debug,
-               fmt::format<const std::string&>( Constants::Logging::Debug::DISPLAY_ISSUING_GUILD,
-                                                theTransaction.issuingGuildName ) );
+    guild issuingGuild{ m_bot.guild_get_sync( theTransaction.issuingGuildID ) };
 
-    dpp::guild issuingGuild{ m_bot.guild_get_sync( theTransaction.issuingGuildID ) };
+    role_map issuingGuildRoles{ m_bot.roles_get_sync( theTransaction.issuingGuildID ) };
 
-    dpp::role_map issuingGuildRoles{ m_bot.roles_get_sync( theTransaction.issuingGuildID ) };
-
-    std::unordered_map<dpp::snowflake, dpp::role>::iterator dmRole =
-        std::find_if( std::begin( issuingGuildRoles ), std::end( issuingGuildRoles ),
-                      []( std::pair<dpp::snowflake, dpp::role> roleEntry ) -> bool
-                      { return roleEntry.second.name == Constants::Role::DM; } );
+    role_map::iterator dmRole = std::find_if( std::begin( issuingGuildRoles ), std::end( issuingGuildRoles ),
+                                              []( std::pair<snowflake, role> roleEntry ) -> bool
+                                              { return roleEntry.second.name == Constants::Role::DM; } );
 
     if( dmRole == std::end( issuingGuildRoles ) )
     {
-        m_bot.log( dpp::loglevel::ll_error, fmt::format<const std::string&, const std::string&>(
-                                                Constants::Logging::Error::MISSING_ROLE,
-                                                theTransaction.issuingGuildName, Constants::Role::DM ) );
+        m_bot.log( loglevel::ll_error, fmt::format<const std::string&, const std::string&>(
+                                           Constants::Logging::Error::MISSING_ROLE, theTransaction.issuingGuildName,
+                                           Constants::Role::DM ) );
     }
     else
     {
-        std::unordered_map<dpp::snowflake, dpp::guild_member> dmMembers = dmRole->second.get_members();
+        guild_member_map members{ m_bot.guild_get_members_sync( theTransaction.issuingGuildID, 1000, snowflake{} ) };
 
-        m_bot.log( dpp::loglevel::ll_debug,
-                   fmt::format( "Found: {} member with role: {}", dmMembers.size(), dmRole->second.name ) );
+        guild_member_map::iterator dmMember = std::find_if(
+            std::begin( members ), std::end( members ),
+            [ &dmRole ]( const std::pair<snowflake, guild_member>& member )
+            {
+                return std::find_if( std::begin( member.second.roles ), std::end( member.second.roles ),
+                                     [ &dmRole ]( snowflake role )
+                                     { return role == dmRole->second.id; } ) != std::end( member.second.roles );
+            } );
 
-        if( dmMembers.size() == 1 )
+        if( dmMember != std::end( members ) )
         {
-            dpp::snowflake dmChannel{ m_bot.get_dm_channel( dmMembers[ 0 ].user_id ) };
-        
+            snowflake dmChannel{ m_bot.get_dm_channel( dmMember->second.user_id ) };
+
             if( dmChannel.empty() )
             {
-                dpp::channel dmMessageChannel = m_bot.create_dm_channel_sync( dmMembers[ 0 ].user_id );
+                channel dmMessageChannel = m_bot.create_dm_channel_sync( dmMember->second.user_id );
                 dmChannel = dmMessageChannel.id;
             }
 
-            dpp::message messageToSend{
-                dmChannel, fmt::format( "Hey DM {}, a PC {}, wants to add {}gp to their stash! Is that ok?",
-                                        dmMembers[ 0 ].nickname, theTransaction.issuingUser, theTransaction.amount ) };
+            message messageToSend{
+                dmChannel, fmt::format( "Hey {}, wants to add {}gp to their stash! Is that ok?",
+                                        members[ theTransaction.issuingUser ].nickname, theTransaction.amount ) };
+            
+            component approveButton{};
+            approveButton.set_label( "Approve" ).set_emoji( "✅" ).set_id();
 
             m_bot.message_create_sync( messageToSend );
         }

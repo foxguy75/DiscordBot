@@ -29,7 +29,7 @@ int main()
     // Discord API Key:
     const std::string botToken{ std::getenv( Constants::Env::DISCORD_BOT_TOKEN.c_str() ) };
 
-    uint32_t intents = dpp::i_default_intents | dpp::i_message_content;
+    uint32_t intents = dpp::i_all_intents;
 
     dpp::cluster bot{ botToken, intents };
 
