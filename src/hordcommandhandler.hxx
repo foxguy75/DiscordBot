@@ -6,6 +6,8 @@
 
 #include <dpp/dpp.h>
 
+#include <transaction_decl.hxx>
+
 class CommandHandler
 {
    public:
@@ -15,26 +17,13 @@ class CommandHandler
    private:
     dpp::cluster& m_bot;
 
-    enum class TransactionStatus
-    {
-        pending,
-        approved,
-        rejected
-    };
-
-    struct Transaction
-    {
-        double amount;
-        dpp::snowflake issuingUser;
-        std::string userName;
-        std::string issuingGuildName;
-        dpp::snowflake issuingGuildID;
-        TransactionStatus status{ TransactionStatus::pending };
-    };
-
     std::string hordHandler( const dpp::interaction& theCommand );
     std::string deposit( const dpp::interaction& theEvent );
     std::string withdraw();
+
+    std::vector<Transaction> pendingTransactions{};
+    std::vector<Transaction> rejectedTransactions{};
+    std::vector<Transaction> approvedTransactions{};
 
     void proccessTransaction( Transaction&& theTransaction );
 };

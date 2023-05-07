@@ -6,6 +6,8 @@
 #include <constants.hxx>
 #include <hordcommandhandler.hxx>
 
+using namespace dpp;
+
 void cleanUpCommand( dpp::cluster& theBot )
 {
     try
@@ -38,6 +40,13 @@ int main()
     CommandHandler commandHandler{ bot };
 
     bot.on_slashcommand( commandHandler );
+
+    bot.on_button_click(
+        [ &bot ]( const button_click_t& event )
+        {
+            event.delete_original_response();
+            event.reply( fmt::format( "You clicked: {}", event.custom_id ) );
+        } );
 
     bot.on_ready(
         [ &bot, &commandHandler ]( const dpp::ready_t& event )

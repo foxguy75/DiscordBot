@@ -1,5 +1,6 @@
 ﻿#include <cstdlib>
 #include <fstream>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -9,12 +10,14 @@
 
 #include <constants.hxx>
 #include <hordcommandhandler.hxx>
+#include <transaction.hxx>
 
 using namespace dpp;
+using namespace nlohmann;
 
 namespace
 {
-    nlohmann::json loadHordJson()
+    json loadHordJson()
     {
         std::fstream jsonFile{ std::getenv( Constants::Env::HORD_JSON.c_str() ) };
 
@@ -28,24 +31,40 @@ namespace
                 jsonFileStr += line;
             }
 
-            return nlohmann::json::parse( jsonFileStr );
+            return json::parse( jsonFileStr );
         }
 
-        return nlohmann::json();
+        return json();
     }
 
-    std::string getBalance( const dpp::user& theUser )
+    std::string getBalance( const user& theUser )
     {
-        nlohmann::json hordJson{ loadHordJson() };
+        json hordJson{ loadHordJson() };
 
         const std::string dndName{ hordJson.at( theUser.username ).at( Constants::Json::Keys::DND_NAME ) };
         const int amount{ hordJson.at( theUser.username ).at( Constants::Json::Keys::AMOUNT_IN_HORD ) };
 
         return fmt::format<const std::string&, const int&>( Constants::Responses::BALANCE, dndName, amount );
     }
+
+    std::string generateUUID( const unsigned int theLength )
+    {
+        std::stringstream ss;
+
+        std::random_device random_device;
+        std::mt19937 generator( random_device() );
+        std::uniform_int_distribution<> distribution( 0, 255 );
+
+        for( int i = 0; i < theLength; ++i )
+        {
+            ss << std::hex << int( distribution( generator ) );
+        }
+
+        return ss.str();
+    }
 }  // namespace
 
-void CommandHandler::operator()( const dpp::slashcommand_t& theEvent )
+void CommandHandler::operator()( const slashcommand_t& theEvent )
 {
     std::string responseMessage{};
 
@@ -58,7 +77,7 @@ void CommandHandler::operator()( const dpp::slashcommand_t& theEvent )
     }
     catch( const std::exception& ex )
     {
-        m_bot.log( dpp::loglevel::ll_error, fmt::format( "{}", ex.what() ) );
+        m_bot.log( loglevel::ll_error, fmt::format( "{}", ex.what() ) );
         responseMessage = Constants::Responses::DEFAULT_ERROR;
     }
     catch( ... )
@@ -66,17 +85,17 @@ void CommandHandler::operator()( const dpp::slashcommand_t& theEvent )
         responseMessage = Constants::Responses::DEFAULT_ERROR;
     }
 
-    theEvent.reply( dpp::message( responseMessage ) );
+    theEvent.reply( message( responseMessage ) );
     return;
 }
 
-std::string CommandHandler::hordHandler( const dpp::interaction& theCommand )
+std::string CommandHandler::hordHandler( const interaction& theCommand )
 {
     std::string message{};
 
     if( theCommand.get_command_interaction().options.size() > 0 )
     {
-        for( const dpp::command_data_option& elem : theCommand.get_command_interaction().options )
+        for( const command_data_option& elem : theCommand.get_command_interaction().options )
         {
             if( elem.name == "balance" )
             {
@@ -100,17 +119,17 @@ std::string CommandHandler::hordHandler( const dpp::interaction& theCommand )
     return message;
 }
 
-std::string CommandHandler::deposit( const dpp::interaction& theCommand )
+std::string CommandHandler::deposit( const interaction& theCommand )
 {
     // Build transaction
-    dpp::command_data_option subCommand{ theCommand.get_command_interaction().options[ 0 ] };
+    command_data_option subCommand{ theCommand.get_command_interaction().options[ 0 ] };
 
     Transaction newTransaction{};
 
     newTransaction.issuingGuildID = theCommand.get_guild().id;
     newTransaction.issuingGuildName = theCommand.get_guild().name;
 
-    for( const dpp::command_data_option option : subCommand.options )
+    for( const command_data_option option : subCommand.options )
     {
         if( option.name == "amount" )
         {
@@ -119,6 +138,8 @@ std::string CommandHandler::deposit( const dpp::interaction& theCommand )
     }
 
     newTransaction.userName = theCommand.get_issuing_user().username;
+
+    newTransaction.uuid = generateUUID( 6 );
 
     // Build Response
     std::string response{ fmt::format( "Alright {} your deposit request of {} is being processed.",
@@ -164,22 +185,33 @@ void CommandHandler::proccessTransaction( Transaction&& theTransaction )
 
         if( dmMember != std::end( members ) )
         {
-            snowflake dmChannel{ m_bot.get_dm_channel( dmMember->second.user_id ) };
+            message messageToSend{ fmt::format( "Hey {}, wants to add {}gp to their stash! Is that ok?",
+                                                members[ theTransaction.issuingUser ].nickname,
+                                                theTransaction.amount ) };
 
-            if( dmChannel.empty() )
-            {
-                channel dmMessageChannel = m_bot.create_dm_channel_sync( dmMember->second.user_id );
-                dmChannel = dmMessageChannel.id;
-            }
+            component actionRow{};
 
-            message messageToSend{
-                dmChannel, fmt::format( "Hey {}, wants to add {}gp to their stash! Is that ok?",
-                                        members[ theTransaction.issuingUser ].nickname, theTransaction.amount ) };
-            
             component approveButton{};
-            approveButton.set_label( "Approve" ).set_emoji( "✅" ).set_id();
+            approveButton.set_label( "Approve" )
+                .set_type( cot_button )
+                .set_style( cos_success )
+                .set_id( fmt::format( "Transaction_Approve_{}", theTransaction.uuid ) );
 
-            m_bot.message_create_sync( messageToSend );
+            actionRow.add_component( approveButton );
+
+            component rejectButton{};
+            rejectButton.set_label( "Reject" )
+                .set_type( cot_button )
+                .set_style( cos_danger )
+                .set_id( fmt::format( "Transaction_Reject_{}", theTransaction.uuid ) );
+
+            actionRow.add_component( rejectButton );
+
+            messageToSend.add_component( actionRow );
+
+            theTransaction.dmMessage = m_bot.direct_message_create_sync( dmMember->second.user_id, messageToSend );
+
+            pendingTransactions.push_back( std::move( theTransaction ) );
         }
 
         return;
